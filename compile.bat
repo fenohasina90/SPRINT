@@ -1,1 +1,0 @@
-javac -cp "lib\servlet-api.jar" -d out src\main\java\com\framework\*.java
