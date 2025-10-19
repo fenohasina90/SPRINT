@@ -1,4 +1,4 @@
-package com.myFramework;
+package main.java.com.framework;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
