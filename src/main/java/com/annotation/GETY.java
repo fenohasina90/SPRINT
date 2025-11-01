@@ -5,8 +5,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-@Retention(RetentionPolicy.RUNTIME) // Disponible à l'exécution
 @Target(ElementType.METHOD)
-public @interface Andrana {
-    String url();
+@Retention(RetentionPolicy.RUNTIME) // Disponible à l'exécution
+public @interface GETY {
+    String value();
 }
