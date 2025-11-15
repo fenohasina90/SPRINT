@@ -1,4 +1,4 @@
-package main.java.com.annotation;
+package main.java.com.annote;
 
 public class RouteInfo {
     private String nomClasse;

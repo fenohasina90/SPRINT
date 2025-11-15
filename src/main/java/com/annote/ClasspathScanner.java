@@ -1,12 +1,12 @@
-package main.java.com.annotation;
+package main.java.com.annote;
 
+import main.java.com.annote.*;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
-
 
 public class ClasspathScanner {
 
@@ -60,11 +60,11 @@ public class ClasspathScanner {
                             if (method.isAnnotationPresent(GETY.class)) {
                                 GETY get = method.getAnnotation(GETY.class);
                                 System.out.println("   🔹 Méthode GETY : " + method.getName() + " -> " + get.value());
-                                routes.add(new RouteInfo(clazz.getSimpleName(), method.getName(), get.value(), "GET"));
+                                routes.add(new RouteInfo(clazz.getName(), method.getName(), get.value(), "GET"));
                             } else if (method.isAnnotationPresent(POSTA.class)) {
                                 POSTA post = method.getAnnotation(POSTA.class);
                                 System.out.println("   🔸 Méthode POSTA : " + method.getName() + " -> " + post.value());
-                                routes.add(new RouteInfo(clazz.getSimpleName(), method.getName(), post.value(), "POST"));
+                                routes.add(new RouteInfo(clazz.getName(), method.getName(), post.value(), "POST"));
                             }
                         }
                     }
