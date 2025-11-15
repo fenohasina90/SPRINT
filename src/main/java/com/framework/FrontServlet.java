@@ -1,14 +1,18 @@
 package main.java.com.framework;
 
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletContext;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import main.java.com.annote.ClasspathScanner;
 import main.java.com.annote.RouteInfo;
+import main.java.com.framework.ModelyAndView;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -60,6 +64,56 @@ public class FrontServlet extends HttpServlet {
                 target.setAccessible(true);
                 Object result = target.invoke(controllerInstance);
                 System.out.println("   ↳ Résultat de l'exécution: " + String.valueOf(result));
+
+                // Si la méthode retourne un ModelyAndView, afficher la page si elle existe
+                if (result instanceof ModelyAndView) {
+                    ModelyAndView mv = (ModelyAndView) result;
+                    String view = mv.getNomDeFichier();
+                    if (view == null || view.isEmpty()) {
+                        res.getWriter().write("<em>vue vide</em>");
+                        return;
+                    }
+                    if (!view.startsWith("/")) view = "/" + view;
+                    String[] candidates;
+                    if (view.endsWith(".jsp") || view.endsWith(".html")) {
+                        candidates = new String[]{view};
+                    } else {
+                        candidates = new String[]{view + ".jsp", view + ".html"};
+                    }
+
+                    ServletContext context = getServletContext();
+                    boolean served = false;
+                    for (String path : candidates) {
+                        try (InputStream is = context.getResourceAsStream(path)) {
+                            if (is != null) {
+                                if (path.endsWith(".jsp")) {
+                                    // Laisser le container exécuter la JSP
+                                    req.getRequestDispatcher(path).forward(req, res);
+                                } else {
+                                    String mime = context.getMimeType(path);
+                                    if (mime == null) mime = "text/html";
+                                    res.setContentType(mime);
+                                    try (OutputStream os = res.getOutputStream()) {
+                                        byte[] buffer = new byte[8192];
+                                        int len;
+                                        while ((len = is.read(buffer)) != -1) {
+                                            os.write(buffer, 0, len);
+                                        }
+                                    }
+                                }
+                                served = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!served) {
+                        String nameForMsg = view.startsWith("/") ? view.substring(1) : view;
+                        res.getWriter().write(nameForMsg + " non trouve");
+                    }
+                    return; // ne pas écrire d'autres contenus après avoir servi la vue
+                }
+
                 // Optionnel: afficher aussi dans la réponse HTTP
                 res.getWriter().write("<h4>Résultat: " + String.valueOf(result) + "</h4>");
             } catch (Throwable t) {
