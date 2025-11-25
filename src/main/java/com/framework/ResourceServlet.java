@@ -10,23 +10,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-@WebServlet(name = "ResourceServlet", urlPatterns = "/*")
+@WebServlet(name = "ResourceServlet", urlPatterns = "/static/*")
 public class ResourceServlet extends HttpServlet {
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String contextPath = req.getContextPath();            // e.g. /test_framework
-        String uri = req.getRequestURI();                     // e.g. /test_framework/page.html
-        String resourcePath = uri.substring(contextPath.length()); // e.g. /page.html
+        String contextPath = req.getContextPath();                 // e.g. /test_framework
+        String uri = req.getRequestURI();                          // e.g. /test_framework/static/page.html
+        String staticPrefix = contextPath + "/static";            // e.g. /test_framework/static
+        String resourcePath = uri.substring(staticPrefix.length()); // e.g. /page.html ou /
 
         // Normalize and default to index.html for root
         if (resourcePath == null || resourcePath.isEmpty() || "/".equals(resourcePath)) {
             resourcePath = "/index.html";
-        }
-
-        // If requesting a JSP, forward so the container compiles/executes it
-        if (resourcePath.endsWith(".jsp")) {
-            req.getRequestDispatcher(resourcePath).forward(req, resp);
-            return;
         }
 
         ServletContext context = getServletContext();
@@ -47,10 +42,7 @@ public class ResourceServlet extends HttpServlet {
             }
         }
 
-        // Not found: forward to FrontServlet fallback
-        // Pass the requested path without leading slash for display
-        String displayPath = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
-        req.setAttribute("__requestedPath", displayPath);
-        req.getRequestDispatcher("/front").forward(req, resp);
+        // Not found: you can choose to send 404 or delegate elsewhere. For now, send 404.
+        resp.sendError(HttpServletResponse.SC_NOT_FOUND);
     }
 }
