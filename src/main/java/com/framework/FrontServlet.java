@@ -15,8 +15,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
-@WebServlet(name = "FrontServlet", urlPatterns = "/front")
+@WebServlet(name = "FrontServlet", urlPatterns = "/")
 public class FrontServlet extends HttpServlet {
     private List<RouteInfo> routes;
 
@@ -24,12 +25,6 @@ public class FrontServlet extends HttpServlet {
     public void init() throws ServletException {
         System.out.println("=== Initialisation du mini framework ===");
         routes = ClasspathScanner.scanClasspath();
-        System.out.println("Routes détectées :");
-        routes.forEach(r ->
-            System.out.println(" - " + r.getType() + " " + r.getUrl()
-                    + " -> " + r.getNomClasse() + "." + r.getNomMethode())
-        );
-        System.out.println("=== Fin du scan ===");
     }
 
 
@@ -50,11 +45,7 @@ public class FrontServlet extends HttpServlet {
         res.setContentType("text/html");
 
         if (found != null) {
-            // === Affichage dans le terminal ===
-            System.out.println("➡ Requête reçue : " + method + " " + url);
-            System.out.println("   ↳ Classe : " + found.getNomClasse());
-            System.out.println("   ↳ Méthode : " + found.getNomMethode());
-            System.out.println("---------------------------------------");
+
 
             // === Invocation par réflexion de la méthode trouvée ===
             try {
@@ -63,11 +54,16 @@ public class FrontServlet extends HttpServlet {
                 Method target = controllerClass.getDeclaredMethod(found.getNomMethode());
                 target.setAccessible(true);
                 Object result = target.invoke(controllerInstance);
-                System.out.println("   ↳ Résultat de l'exécution: " + String.valueOf(result));
 
                 // Si la méthode retourne un ModelyAndView, afficher la page si elle existe
                 if (result instanceof ModelyAndView) {
                     ModelyAndView mv = (ModelyAndView) result;
+
+                    // Injecter le modèle comme attributs de requête
+                    for (Map.Entry<String, Object> entry : mv.getModel().entrySet()) {
+                        req.setAttribute(entry.getKey(), entry.getValue());
+                    }
+
                     String view = mv.getNomDeFichier();
                     if (view == null || view.isEmpty()) {
                         res.getWriter().write("<em>vue vide</em>");
@@ -118,6 +114,7 @@ public class FrontServlet extends HttpServlet {
                 res.getWriter().write("<h4>Résultat: " + String.valueOf(result) + "</h4>");
             } catch (Throwable t) {
                 System.out.println("❗ Erreur lors de l'invocation: " + t.getClass().getName() + " - " + t.getMessage());
+                t.printStackTrace();
                 res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 res.getWriter().write("<pre>Erreur d'exécution: " + t.getMessage() + "</pre>");
                 return;
@@ -132,32 +129,4 @@ public class FrontServlet extends HttpServlet {
             res.getWriter().write("<h1>Aucune correspondance trouvée</h1>");
         }
     }
-
-    // @Override
-    // protected void service(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
-    //     Object requestedPath = req.getAttribute("__requestedPath");
-    //     String url = requestedPath != null ? requestedPath.toString() : req.getRequestURI();
-    //     res.setContentType("text/html");
-    //     res.getWriter().write("<h1>HELLO WORLD</h1>");
-    //     res.getWriter().write("<h1>URL  : " + url + "</h1>");
-    // }
-    // @Override
-    // protected void service(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
-    //     String path = req.getRequestURI().replace(req.getContextPath(), "");
-    //     String methodType = req.getMethod();
-        
-    //     RouteInfo matched = routes.stream()
-    //         .filter(r -> r.getUrl().equals(path) && r.getType().equalsIgnoreCase(methodType))
-    //         .findFirst()
-    //         .orElse(null);
-
-    //     res.setContentType("text/html");
-    //     if (matched != null) {
-    //         res.getWriter().write("<h1>URL : " + path + "</h1>");
-    //         res.getWriter().write("<h2>Méthode : " + matched.getNomMethode() + "</h2>");
-    //         res.getWriter().write("<h3>Classe : " + matched.getNomClasse() + "</h3>");
-    //     } else {
-    //         res.getWriter().write("<h1>Aucune route correspondante</h1>");
-    //     }
-    // }
 }
