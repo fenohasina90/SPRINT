@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import main.java.com.annote.ClasspathScanner;
 import main.java.com.annote.RouteInfo;
 import main.java.com.annote.RequestParam;
+import main.java.com.annote.PathVariable;
 import main.java.com.framework.ModelyAndView;
 
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.lang.reflect.Parameter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -43,11 +45,18 @@ public class FrontServlet extends HttpServlet {
         String url = requestedPath != null ? "/" + requestedPath : req.getRequestURI().replace(req.getContextPath(), "");
         String method = req.getMethod();
 
-        // Recherche de la route correspondante
-        RouteInfo found = routes.stream()
-            .filter(r -> r.getUrl().equals(url) && r.getType().equalsIgnoreCase(method))
-            .findFirst()
-            .orElse(null);
+        // Recherche de la route correspondante (supporte les variables de chemin /produits/{id})
+        RouteInfo found = null;
+        Map<String, String> pathVariables = new HashMap<>();
+        for (RouteInfo r : routes) {
+            if (!r.getType().equalsIgnoreCase(method)) continue;
+            Map<String, String> vars = matchPath(url, r.getUrl());
+            if (vars != null) {
+                found = r;
+                pathVariables = vars;
+                break;
+            }
+        }
 
         res.setContentType("text/html");
 
@@ -73,15 +82,18 @@ public class FrontServlet extends HttpServlet {
 
                 target.setAccessible(true);
 
-                // Préparer les arguments à partir des paramètres de requête (@RequestParam)
+                // Préparer les arguments à partir des paramètres de requête (@RequestParam) ou de chemin (@PathVariable)
                 Parameter[] params = target.getParameters();
                 Object[] args = new Object[params.length];
                 for (int i = 0; i < params.length; i++) {
                     Parameter p = params[i];
                     RequestParam rp = p.getAnnotation(RequestParam.class);
+                    PathVariable pv = p.getAnnotation(PathVariable.class);
                     String raw = null;
                     if (rp != null) {
                         raw = req.getParameter(rp.value());
+                    } else if (pv != null) {
+                        raw = pathVariables.get(pv.value());
                     }
                     args[i] = convertValue(raw, p.getType());
                 }
@@ -203,5 +215,42 @@ public class FrontServlet extends HttpServlet {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // Retourne les variables de chemin extraites si le chemin correspond au template, sinon null.
+    // Exemple: requestPath="/produits/42" et pattern="/produits/{id}" -> {id=42}
+    private Map<String, String> matchPath(String requestPath, String pattern) {
+        if (requestPath == null || pattern == null) return null;
+
+        String req = requestPath;
+        String pat = pattern;
+
+        if (!req.startsWith("/")) req = "/" + req;
+        if (!pat.startsWith("/")) pat = "/" + pat;
+
+        String[] reqSeg = req.split("/");
+        String[] patSeg = pat.split("/");
+        if (reqSeg.length != patSeg.length) return null;
+
+        Map<String, String> vars = new HashMap<>();
+        for (int i = 0; i < patSeg.length; i++) {
+            String ps = patSeg[i];
+            String rs = reqSeg[i];
+
+            if (ps.isEmpty() && rs.isEmpty()) continue; // leading segment
+
+            if (ps.startsWith("{") && ps.endsWith("}")) {
+                String name = ps.substring(1, ps.length() - 1).trim();
+                if (!name.isEmpty()) {
+                    vars.put(name, rs);
+                }
+            } else {
+                if (!ps.equals(rs)) {
+                    return null; // segment fixe qui ne correspond pas
+                }
+            }
+        }
+
+        return vars;
     }
 }
