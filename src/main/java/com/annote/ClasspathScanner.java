@@ -56,15 +56,24 @@ public class ClasspathScanner {
                     if (clazz.isAnnotationPresent(Controllera.class)) {
                         System.out.println("\n🧩 Classe contrôleur trouvée : " + clazz.getName());
 
+                        // Préfixe d'URL de la classe via @RequestMapping (optionnel)
+                        String basePath = "";
+                        if (clazz.isAnnotationPresent(RequestMapping.class)) {
+                            RequestMapping rm = clazz.getAnnotation(RequestMapping.class);
+                            basePath = rm.value();
+                        }
+
                         for (Method method : clazz.getDeclaredMethods()) {
                             if (method.isAnnotationPresent(GETY.class)) {
                                 GETY get = method.getAnnotation(GETY.class);
-                                System.out.println("   🔹 Méthode GETY : " + method.getName() + " -> " + get.value());
-                                routes.add(new RouteInfo(clazz.getName(), method.getName(), get.value(), "GET"));
+                                String fullPath = normalizePath(basePath, get.value());
+                                System.out.println("   🔹 Méthode GETY : " + method.getName() + " -> " + fullPath);
+                                routes.add(new RouteInfo(clazz.getName(), method.getName(), fullPath, "GET"));
                             } else if (method.isAnnotationPresent(POSTA.class)) {
                                 POSTA post = method.getAnnotation(POSTA.class);
-                                System.out.println("   🔸 Méthode POSTA : " + method.getName() + " -> " + post.value());
-                                routes.add(new RouteInfo(clazz.getName(), method.getName(), post.value(), "POST"));
+                                String fullPath = normalizePath(basePath, post.value());
+                                System.out.println("   🔸 Méthode POSTA : " + method.getName() + " -> " + fullPath);
+                                routes.add(new RouteInfo(clazz.getName(), method.getName(), fullPath, "POST"));
                             }
                         }
                     }
@@ -73,5 +82,25 @@ public class ClasspathScanner {
                 }
             }
         }
+    }
+
+    // Concatène proprement un préfixe de classe et un chemin de méthode en gérant les '/'
+    private static String normalizePath(String base, String methodPath) {
+        if (base == null) base = "";
+        if (methodPath == null) methodPath = "";
+
+        String b = base.trim();
+        String m = methodPath.trim();
+
+        if (!b.isEmpty() && !b.startsWith("/")) b = "/" + b;
+        if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+
+        if (!m.isEmpty() && !m.startsWith("/")) m = "/" + m;
+
+        String result = b + m;
+        if (result.isEmpty()) {
+            return "/";
+        }
+        return result;
     }
 }
