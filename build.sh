@@ -52,7 +52,9 @@ fi
 
 # Compile
 echo "Compiling sources..."
-javac -cp "$CP" -d "$CLASSES_DIR" @"$SOURCES_LIST"
+# Add all jars from lib/ to the classpath in addition to the servlet API
+FULL_CP="$CP:$LIB_DIR/*"
+javac -cp "$FULL_CP" -d "$CLASSES_DIR" @"$SOURCES_LIST"
 
 # Manifest
 cat > "$MANIFEST_FILE" <<EOF
@@ -66,7 +68,7 @@ echo "Packaging $JAR_FILE ..."
 jar cfm "$JAR_FILE" "$MANIFEST_FILE" -C "$CLASSES_DIR" .
 
 # Deploy to Tomcat lib (replace if exists)
-echo "Copying to $DEST_JAR (requires permissions if protected)..."
+echo "Copying framework JAR to $DEST_JAR (requires permissions if protected)..."
 if cp -f "$JAR_FILE" "$DEST_JAR" 2>/dev/null; then
   echo "Copied to $DEST_JAR"
 else
@@ -81,6 +83,27 @@ else
     echo "Warning: sudo not available. Please copy $JAR_FILE to $DEST_JAR manually with sufficient permissions." >&2
   fi
 fi
+
+# Also deploy framework dependencies (e.g. commons-beanutils, commons-logging) to Tomcat lib
+for dep in "$LIB_DIR"/commons-beanutils-*.jar "$LIB_DIR"/commons-logging-*.jar; do
+  if [[ -f "$dep" ]]; then
+    dest_dep="$DEST_TOMCAT_LIB/$(basename "$dep")"
+    echo "Copying dependency $(basename "$dep") to $dest_dep ..."
+    if cp -f "$dep" "$dest_dep" 2>/dev/null; then
+      echo "Copied $(basename "$dep") to $dest_dep"
+    else
+      if command -v sudo >/dev/null 2>&1; then
+        if sudo cp -f "$dep" "$dest_dep"; then
+          echo "Copied $(basename "$dep") to $dest_dep with sudo"
+        else
+          echo "Warning: Failed to copy $(basename "$dep") to $dest_dep. Please copy manually if needed." >&2
+        fi
+      else
+        echo "Warning: sudo not available. Please copy $dep to $dest_dep manually with sufficient permissions." >&2
+      fi
+    fi
+  fi
+done
 
 # Done
 echo "Built JAR: $JAR_FILE"

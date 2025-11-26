@@ -8,14 +8,21 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import main.java.com.annote.ClasspathScanner;
 import main.java.com.annote.RouteInfo;
+import main.java.com.annote.RequestParam;
 import main.java.com.framework.ModelyAndView;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.commons.beanutils.ConvertUtils;
 
 @WebServlet(name = "FrontServlet", urlPatterns = "/")
 public class FrontServlet extends HttpServlet {
@@ -51,9 +58,35 @@ public class FrontServlet extends HttpServlet {
             try {
                 Class<?> controllerClass = Class.forName(found.getNomClasse());
                 Object controllerInstance = controllerClass.getDeclaredConstructor().newInstance();
-                Method target = controllerClass.getDeclaredMethod(found.getNomMethode());
+
+                // Résoudre la méthode par nom, quelle que soit sa signature
+                Method target = null;
+                for (Method m : controllerClass.getDeclaredMethods()) {
+                    if (m.getName().equals(found.getNomMethode())) {
+                        target = m;
+                        break;
+                    }
+                }
+                if (target == null) {
+                    throw new NoSuchMethodException("Méthode " + found.getNomMethode() + " introuvable dans " + controllerClass.getName());
+                }
+
                 target.setAccessible(true);
-                Object result = target.invoke(controllerInstance);
+
+                // Préparer les arguments à partir des paramètres de requête (@RequestParam)
+                Parameter[] params = target.getParameters();
+                Object[] args = new Object[params.length];
+                for (int i = 0; i < params.length; i++) {
+                    Parameter p = params[i];
+                    RequestParam rp = p.getAnnotation(RequestParam.class);
+                    String raw = null;
+                    if (rp != null) {
+                        raw = req.getParameter(rp.value());
+                    }
+                    args[i] = convertValue(raw, p.getType());
+                }
+
+                Object result = target.invoke(controllerInstance, args);
 
                 // Si la méthode retourne un ModelyAndView, afficher la page si elle existe
                 if (result instanceof ModelyAndView) {
@@ -127,6 +160,48 @@ public class FrontServlet extends HttpServlet {
         } else {
             System.out.println("❌ Aucune correspondance trouvée pour " + method + " " + url);
             res.getWriter().write("<h1>Aucune correspondance trouvée</h1>");
+        }
+    }
+
+    private Object convertValue(String raw, Class<?> type) {
+        // Gestion des LocalDate explicitement (format par défaut yyyy-MM-dd)
+        if (type == LocalDate.class) {
+            if (raw == null || raw.isEmpty()) {
+                return null;
+            }
+            try {
+                return LocalDate.parse(raw);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        // Gestion des LocalDateTime pour les inputs HTML datetime-local (yyyy-MM-dd'T'HH:mm)
+        if (type == LocalDateTime.class) {
+            if (raw == null || raw.isEmpty()) {
+                return null;
+            }
+            try {
+                // datetime-local envoie typiquement: 2025-11-26T13:05
+                DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+                return LocalDateTime.parse(raw, fmt);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        // Laisser BeanUtils gérer les autres conversions courantes
+        if (raw == null) {
+            if (!type.isPrimitive()) return null;
+            // Pour les primitifs, BeanUtils fournira déjà des valeurs par défaut
+            // mais on gère le cas null de manière sûre
+            return ConvertUtils.convert("", type);
+        }
+
+        try {
+            return ConvertUtils.convert(raw, type);
+        } catch (Exception e) {
+            return null;
         }
     }
 }
