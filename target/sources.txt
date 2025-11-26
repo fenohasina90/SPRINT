@@ -1,8 +1,0 @@
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/annote/Controllera.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/annote/ClasspathScanner.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/annote/RouteInfo.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/annote/POSTA.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/annote/GETY.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/framework/ModelyAndView.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/framework/FrontServlet.java
-/home/mangalahy/PERSO/IT_UNIVERSITY/S5/Framework/SPRINT/src/main/java/com/framework/ResourceServlet.java

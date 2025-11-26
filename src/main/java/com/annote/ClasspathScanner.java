@@ -1,5 +1,6 @@
 package main.java.com.annote;
 
+import main.java.com.annote.*;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -11,6 +12,9 @@ public class ClasspathScanner {
 
     public static List<RouteInfo> scanClasspath() {
         List<RouteInfo> routes = new ArrayList<>();
+
+        System.out.println("=== 🔍 DÉBUT DU SCAN CLASSPATH ===");
+
         try {
             // Récupère tous les chemins du classpath (ex: WEB-INF/classes/)
             ClassLoader loader = Thread.currentThread().getContextClassLoader();
@@ -19,12 +23,21 @@ public class ClasspathScanner {
             while (resources.hasMoreElements()) {
                 URL resource = resources.nextElement();
                 File rootDir = new File(resource.toURI());
+                System.out.println("📂 Scan du dossier : " + rootDir.getAbsolutePath());
                 scanDirectory(rootDir, "", routes);
             }
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        System.out.println("=== ✅ FIN DU SCAN CLASSPATH ===");
+        System.out.println("Nombre total de routes détectées : " + routes.size());
+        routes.forEach(r ->
+            System.out.println("➡ " + r.getType() + " " + r.getUrl()
+                    + " -> " + r.getNomClasse() + "." + r.getNomMethode())
+        );
+
         return routes;
     }
 
@@ -41,12 +54,16 @@ public class ClasspathScanner {
                     Class<?> clazz = Class.forName(className);
 
                     if (clazz.isAnnotationPresent(Controllera.class)) {
+                        System.out.println("\n🧩 Classe contrôleur trouvée : " + clazz.getName());
+
                         for (Method method : clazz.getDeclaredMethods()) {
                             if (method.isAnnotationPresent(GETY.class)) {
                                 GETY get = method.getAnnotation(GETY.class);
+                                System.out.println("   🔹 Méthode GETY : " + method.getName() + " -> " + get.value());
                                 routes.add(new RouteInfo(clazz.getName(), method.getName(), get.value(), "GET"));
                             } else if (method.isAnnotationPresent(POSTA.class)) {
                                 POSTA post = method.getAnnotation(POSTA.class);
+                                System.out.println("   🔸 Méthode POSTA : " + method.getName() + " -> " + post.value());
                                 routes.add(new RouteInfo(clazz.getName(), method.getName(), post.value(), "POST"));
                             }
                         }
