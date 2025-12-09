@@ -17,13 +17,19 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.Type;
+import java.lang.reflect.ParameterizedType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.beanutils.ConvertUtils;
 
 @WebServlet(name = "FrontServlet", urlPatterns = "/")
@@ -82,7 +88,8 @@ public class FrontServlet extends HttpServlet {
 
                 target.setAccessible(true);
 
-                // Préparer les arguments à partir des paramètres de requête (@RequestParam) ou de chemin (@PathVariable)
+                // Préparer les arguments à partir des paramètres de requête (@RequestParam), de chemin (@PathVariable)
+                // ou d'objets métier (entités/POJO) et Map<String,Object>
                 Parameter[] params = target.getParameters();
                 Object[] args = new Object[params.length];
                 for (int i = 0; i < params.length; i++) {
@@ -96,6 +103,28 @@ public class FrontServlet extends HttpServlet {
                     } else if (pv != null) {
                         raw = pathVariables.get(pv.value());
                         args[i] = convertValue(raw, p.getType());
+                    } else if (isEntityType(p.getType())) {
+                        // Liaison d'une entité (POJO) à partir des paramètres de requête, y compris listes imbriquées
+                        try {
+                            Object bean = p.getType().getDeclaredConstructor().newInstance();
+
+                            // 1) Remplir d'abord les propriétés "simples" avec BeanUtils.populate
+                            //    On exclut les champs indexés de type liste (ex: typeClient[0].ecole)
+                            Map<String, String[]> simpleParams = new HashMap<>();
+                            for (Map.Entry<String, String[]> entry : req.getParameterMap().entrySet()) {
+                                String key = entry.getKey();
+                                if (key.contains("[")) continue; // laissé aux listes imbriquées
+                                simpleParams.put(key, entry.getValue());
+                            }
+                            BeanUtils.populate(bean, simpleParams);
+
+                            // 2) Puis gère les propriétés de type List<Entite>
+                            populateNestedLists(bean, req.getParameterMap());
+                            args[i] = bean;
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            args[i] = null;
+                        }
                     } else if (Map.class.isAssignableFrom(p.getType())) {
                         // Injection d'une Map<String,Object> contenant tous les paramètres de requête
                         Map<String, Object> mapArg = new HashMap<>();
@@ -112,7 +141,7 @@ public class FrontServlet extends HttpServlet {
                         }
                         args[i] = mapArg;
                     } else {
-                        // Pas d'annotation: laisser null par défaut
+                        // Pas d'annotation et pas de type spécial géré: laisser null par défaut
                         args[i] = null;
                     }
                 }
@@ -271,5 +300,74 @@ public class FrontServlet extends HttpServlet {
         }
 
         return vars;
+    }
+
+    // Remplit les propriétés de type List<POJO> d'un bean à partir des paramètres de requête
+    // Convention de nommage: fieldName[0].property, fieldName[1].property, ...
+    private void populateNestedLists(Object bean, Map<String, String[]> paramMap) {
+        Class<?> beanClass = bean.getClass();
+
+        // Pour chaque propriété List<T> déclarée dans le bean
+        for (java.lang.reflect.Field field : beanClass.getDeclaredFields()) {
+            Type genericType = field.getGenericType();
+            if (!(genericType instanceof ParameterizedType)) continue;
+
+            ParameterizedType pt = (ParameterizedType) genericType;
+            if (!(field.getType().isAssignableFrom(List.class))) continue;
+
+            Type[] args = pt.getActualTypeArguments();
+            if (args.length != 1 || !(args[0] instanceof Class<?>)) continue;
+
+            Class<?> elementType = (Class<?>) args[0];
+            if (!isEntityType(elementType)) continue;
+
+            String fieldName = field.getName();
+            // Pattern: fieldName[<index>].property
+            Pattern pattern = Pattern.compile(Pattern.quote(fieldName) + "\\[(\\d+)]\\.(.+)");
+
+            // Regrouper les valeurs par index
+            Map<Integer, Map<String, String[]>> perIndex = new HashMap<>();
+            for (Map.Entry<String, String[]> entry : paramMap.entrySet()) {
+                Matcher m = pattern.matcher(entry.getKey());
+                if (!m.matches()) continue;
+                int idx = Integer.parseInt(m.group(1));
+                String prop = m.group(2);
+                perIndex.computeIfAbsent(idx, k -> new HashMap<>())
+                        .put(prop, entry.getValue());
+            }
+
+            if (perIndex.isEmpty()) continue;
+
+            List<Object> list = new ArrayList<>();
+            // Reconstruire la liste en ordre d'index croissant
+            perIndex.keySet().stream().sorted().forEach(idx -> {
+                Map<String, String[]> values = perIndex.get(idx);
+                try {
+                    Object elem = elementType.getDeclaredConstructor().newInstance();
+                    BeanUtils.populate(elem, values);
+                    list.add(elem);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+
+            try {
+                field.setAccessible(true);
+                field.set(bean, list);
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    // Détermine si un type peut être traité comme entité métier (POJO) pour binding automatique
+    private boolean isEntityType(Class<?> type) {
+        if (type.isPrimitive()) return false;
+        Package pkg = type.getPackage();
+        String pkgName = (pkg != null) ? pkg.getName() : "";
+        if (pkgName.startsWith("java.")) return false;
+        if (Map.class.isAssignableFrom(type)) return false;
+        // On pourrait exclure ici d'autres types spéciaux si besoin
+        return true;
     }
 }
