@@ -92,10 +92,29 @@ public class FrontServlet extends HttpServlet {
                     String raw = null;
                     if (rp != null) {
                         raw = req.getParameter(rp.value());
+                        args[i] = convertValue(raw, p.getType());
                     } else if (pv != null) {
                         raw = pathVariables.get(pv.value());
+                        args[i] = convertValue(raw, p.getType());
+                    } else if (Map.class.isAssignableFrom(p.getType())) {
+                        // Injection d'une Map<String,Object> contenant tous les paramètres de requête
+                        Map<String, Object> mapArg = new HashMap<>();
+                        for (Map.Entry<String, String[]> entry : req.getParameterMap().entrySet()) {
+                            String key = entry.getKey();
+                            String[] values = entry.getValue();
+                            if (values == null) {
+                                mapArg.put(key, null);
+                            } else if (values.length == 1) {
+                                mapArg.put(key, values[0]);
+                            } else {
+                                mapArg.put(key, values);
+                            }
+                        }
+                        args[i] = mapArg;
+                    } else {
+                        // Pas d'annotation: laisser null par défaut
+                        args[i] = null;
                     }
-                    args[i] = convertValue(raw, p.getType());
                 }
 
                 Object result = target.invoke(controllerInstance, args);
