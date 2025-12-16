@@ -10,6 +10,7 @@ import main.java.com.annote.ClasspathScanner;
 import main.java.com.annote.RouteInfo;
 import main.java.com.annote.RequestParam;
 import main.java.com.annote.PathVariable;
+import main.java.com.annote.JSON;
 import main.java.com.framework.ModelyAndView;
 
 import java.io.IOException;
@@ -88,6 +89,8 @@ public class FrontServlet extends HttpServlet {
 
                 target.setAccessible(true);
 
+                boolean jsonOutput = target.isAnnotationPresent(JSON.class);
+
                 // Préparer les arguments à partir des paramètres de requête (@RequestParam), de chemin (@PathVariable)
                 // ou d'objets métier (entités/POJO) et Map<String,Object>
                 Parameter[] params = target.getParameters();
@@ -147,6 +150,19 @@ public class FrontServlet extends HttpServlet {
                 }
 
                 Object result = target.invoke(controllerInstance, args);
+
+                // Si @JSON est présent, retourner du JSON
+                if (jsonOutput) {
+                    res.setContentType("application/json;charset=UTF-8");
+                    Object toSerialize = result;
+                    if (result instanceof ModelyAndView) {
+                        ModelyAndView mv = (ModelyAndView) result;
+                        toSerialize = mv.getModel();
+                    }
+                    String json = toJson(toSerialize);
+                    res.getWriter().write(json);
+                    return;
+                }
 
                 // Si la méthode retourne un ModelyAndView, afficher la page si elle existe
                 if (result instanceof ModelyAndView) {
@@ -300,6 +316,93 @@ public class FrontServlet extends HttpServlet {
         }
 
         return vars;
+    }
+
+    // Sérialisation JSON très simple (réflexive) pour réponses @JSON
+    private String toJson(Object value) {
+        if (value == null) return "null";
+        if (value instanceof String) return '"' + escapeJson((String) value) + '"';
+        if (value instanceof Number || value instanceof Boolean) return String.valueOf(value);
+        if (value.getClass().isArray()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            int len = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < len; i++) {
+                if (i > 0) sb.append(',');
+                Object elem = java.lang.reflect.Array.get(value, i);
+                sb.append(toJson(elem));
+            }
+            sb.append("]");
+            return sb.toString();
+        }
+        if (value instanceof Iterable<?>) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            boolean first = true;
+            for (Object elem : (Iterable<?>) value) {
+                if (!first) sb.append(',');
+                first = false;
+                sb.append(toJson(elem));
+            }
+            sb.append("]");
+            return sb.toString();
+        }
+        if (value instanceof Map<?, ?>) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) value).entrySet()) {
+                if (!(e.getKey() instanceof String)) continue;
+                if (!first) sb.append(',');
+                first = false;
+                sb.append('"').append(escapeJson((String) e.getKey())).append('"').append(':');
+                sb.append(toJson(e.getValue()));
+            }
+            sb.append("}");
+            return sb.toString();
+        }
+
+        // POJO: sérialiser via champs
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        boolean first = true;
+        Class<?> cls = value.getClass();
+        for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+            f.setAccessible(true);
+            try {
+                Object v = f.get(value);
+                if (!first) sb.append(',');
+                first = false;
+                sb.append('"').append(escapeJson(f.getName())).append('"').append(':');
+                sb.append(toJson(v));
+            } catch (IllegalAccessException ignored) {
+            }
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String escapeJson(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
     }
 
     // Remplit les propriétés de type List<POJO> d'un bean à partir des paramètres de requête
