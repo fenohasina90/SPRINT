@@ -2,15 +2,19 @@ package main.java.com.framework;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import main.java.com.annote.ClasspathScanner;
 import main.java.com.annote.RouteInfo;
 import main.java.com.annote.RequestParam;
 import main.java.com.annote.PathVariable;
 import main.java.com.annote.JSON;
+import main.java.com.annote.GETY;
+import main.java.com.annote.POSTA;
 import main.java.com.framework.ModelyAndView;
 
 import java.io.IOException;
@@ -34,6 +38,7 @@ import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.beanutils.ConvertUtils;
 
 @WebServlet(name = "FrontServlet", urlPatterns = "/")
+@MultipartConfig
 public class FrontServlet extends HttpServlet {
     private List<RouteInfo> routes;
 
@@ -51,6 +56,7 @@ public class FrontServlet extends HttpServlet {
         Object requestedPath = req.getAttribute("__requestedPath");
         String url = requestedPath != null ? "/" + requestedPath : req.getRequestURI().replace(req.getContextPath(), "");
         String method = req.getMethod();
+        System.out.println(">>> Requête reçue : " + method + " " + url);
 
         // Recherche de la route correspondante (supporte les variables de chemin /produits/{id})
         RouteInfo found = null;
@@ -75,10 +81,17 @@ public class FrontServlet extends HttpServlet {
                 Class<?> controllerClass = Class.forName(found.getNomClasse());
                 Object controllerInstance = controllerClass.getDeclaredConstructor().newInstance();
 
-                // Résoudre la méthode par nom, quelle que soit sa signature
+                // Résoudre la méthode en tenant compte du nom ET du type HTTP (@GETY/@POSTA)
                 Method target = null;
                 for (Method m : controllerClass.getDeclaredMethods()) {
-                    if (m.getName().equals(found.getNomMethode())) {
+                    if (!m.getName().equals(found.getNomMethode())) continue;
+
+                    String routeType = found.getType();
+                    if ("GET".equalsIgnoreCase(routeType) && m.isAnnotationPresent(GETY.class)) {
+                        target = m;
+                        break;
+                    }
+                    if ("POST".equalsIgnoreCase(routeType) && m.isAnnotationPresent(POSTA.class)) {
                         target = m;
                         break;
                     }
@@ -101,8 +114,26 @@ public class FrontServlet extends HttpServlet {
                     PathVariable pv = p.getAnnotation(PathVariable.class);
                     String raw = null;
                     if (rp != null) {
-                        raw = req.getParameter(rp.value());
-                        args[i] = convertValue(raw, p.getType());
+                        if (Part.class.isAssignableFrom(p.getType())) {
+                            args[i] = req.getPart(rp.value());
+                        } else if (UploadedFile.class.isAssignableFrom(p.getType())) {
+                            try {
+                                Part part = req.getPart(rp.value());
+                                if (part != null && part.getSize() > 0) {
+                                    byte[] data = readAllBytes(part.getInputStream());
+                                    args[i] = new UploadedFile(part.getSubmittedFileName(), part.getContentType(), part.getSize(), data);
+                                } else {
+                                    args[i] = null; // aucun fichier envoyé
+                                }
+                            } catch (Exception e) {
+                                System.out.println("❗ Erreur lors du binding UploadedFile pour le paramètre " + rp.value() + " : " + e.getMessage());
+                                e.printStackTrace();
+                                args[i] = null; // ne pas bloquer l'invocation du contrôleur
+                            }
+                        } else {
+                            raw = req.getParameter(rp.value());
+                            args[i] = convertValue(raw, p.getType());
+                        }
                     } else if (pv != null) {
                         raw = pathVariables.get(pv.value());
                         args[i] = convertValue(raw, p.getType());
@@ -223,6 +254,7 @@ public class FrontServlet extends HttpServlet {
                 res.getWriter().write("<h4>Résultat: " + String.valueOf(result) + "</h4>");
             } catch (Throwable t) {
                 System.out.println("❗ Erreur lors de l'invocation: " + t.getClass().getName() + " - " + t.getMessage());
+                
                 t.printStackTrace();
                 res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 res.getWriter().write("<pre>Erreur d'exécution: " + t.getMessage() + "</pre>");
@@ -472,5 +504,17 @@ public class FrontServlet extends HttpServlet {
         if (Map.class.isAssignableFrom(type)) return false;
         // On pourrait exclure ici d'autres types spéciaux si besoin
         return true;
+    }
+
+    // Lit entièrement un InputStream dans un tableau de bytes (utilisé pour UploadedFile)
+    private byte[] readAllBytes(InputStream in) throws IOException {
+        try (InputStream input = in; java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = input.read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            return baos.toByteArray();
+        }
     }
 }
